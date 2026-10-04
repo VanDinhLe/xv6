@@ -101,6 +101,15 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+extern uint64 sys_hello(void);
+extern uint64 sys_ticks_running(void);
+extern uint64 sys_sjf_job_length(void);
+extern uint64 sys_set_sched_priority(void);
+extern uint64 sys_get_sched_priority(void);
+extern uint64 sys_pagefault(void);
+extern uint64 sys_pagecount(void);
+extern uint64 sys_lseek(void);
+extern uint64 sys_symlink(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -126,6 +135,15 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_hello]   sys_hello,
+[SYS_ticks_running] sys_ticks_running,
+[SYS_sjf_job_length] sys_sjf_job_length,
+[SYS_set_sched_priority] sys_set_sched_priority,
+[SYS_get_sched_priority] sys_get_sched_priority,
+[SYS_pagefault] sys_pagefault,
+[SYS_pagecount] sys_pagecount,
+[SYS_lseek] sys_lseek,
+[SYS_symlink] sys_symlink,
 };
 
 void

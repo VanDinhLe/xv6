@@ -177,4 +177,102 @@ filewrite(struct file *f, uint64 addr, int n)
 
   return ret;
 }
+/*
+// prj 4
 
+int
+filewrite(struct file *f, uint64 addr, int n)
+{
+  int r, ret = 0;
+
+  if(f->writable == 0)
+    return -1;
+
+  if(f->type == FD_PIPE){
+    ret = pipewrite(f->pipe, addr, n);
+  } else if(f->type == FD_DEVICE){
+    if(f->major < 0 || f->major >= NDEV || !devsw[f->major].write)
+      return -1;
+    ret = devsw[f->major].write(1, addr, n);
+  } else if(f->type == FD_INODE){
+    // write a few blocks at a time to avoid exceeding
+    // the maximum log transaction size, including
+    // i-node, indirect block, allocation blocks,
+    // and 2 blocks of slop for non-aligned writes.
+    int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
+    int i = 0;
+    int fillsize = f->off - f->ip->size;
+    printf("f->off: %d\n",f->off);
+    printf("f->ip->size: %d\n",f->ip->size);
+    char zero = 0;
+    int filling = (f->off > f->ip->size) ? 1 : 0;
+    printf("filling? %d\n", filling);
+    while(i < fillsize && filling){
+      int n1 = fillsize - i;
+      if(n1 > max)
+        n1 = max;
+
+      begin_op();
+      ilock(f->ip);
+      printf("adrr %ld\n", (uint64)&zero);
+      if ((r = writei(f->ip, 1,(uint64)&zero, f->ip->size, n1)) > 0)
+        f->ip->size += r;
+      iunlock(f->ip);
+      end_op();
+      
+      printf("byte filled with 0: %d\n",r);
+      if(r != n1){
+        // error from writei
+        break;
+      }
+      i += r;
+    }
+    if(i != fillsize && filling) {
+      printf("not set all 0 %d - %d\n", i, fillsize);
+      return -1;
+    }
+    //ret = (i == n ? n : -1);
+
+    max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
+    i = 0;
+    while(i < n){
+      int n1 = n - i;
+      if(n1 > max)
+        n1 = max;
+
+      begin_op();
+      ilock(f->ip);
+      if ((r = writei(f->ip, 1, addr + i, f->off, n1)) > 0)
+        f->off += r;
+      iunlock(f->ip);
+      end_op();
+
+      if(r != n1){
+        // error from writei
+        break;
+      }
+      i += r;
+    }
+    ret = (i == n ? n : -1);
+  } else {
+    panic("filewrite");
+  }
+  return ret;
+}
+*/
+int fileseek(struct file* f, int n)
+{
+  // no need to increase
+  // need write if off + n > EOF
+  if(f->readable == 0)
+    return -1;
+  // move the cursor to next point within the range [0, maxfile]
+  if(f->off + n >= 0 && f->off + n <= MAXFILE)
+  {
+    f->off += n;
+  } else {
+    printf("off is in invalid range\n");
+    return 1;
+  }
+  return f->off;
+}

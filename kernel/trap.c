@@ -14,6 +14,7 @@ extern char trampoline[], uservec[];
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
+
 extern int devintr();
 
 void
@@ -68,9 +69,39 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+/* (prj 3) original xv6
   } else if((r_scause() == 15 || r_scause() == 13) &&
             vmfault(p->pagetable, r_stval(), (r_scause() == 13)? 1 : 0) != 0) {
-    // page fault on lazily-allocated page
+
+*/
+  // prj 3
+  } else if((r_scause() == 15 || r_scause() == 13)) {
+      acquire(&p->lock);
+      p->pagefault++; // count page fault
+      // DGB messages
+      if (0) {
+      printf("page fault count %d\n", p->pagefault);
+      printf("[trap] pid=%d scause=%lx stval=0x%lx p->sz=0x%lx\n",
+        p->pid, r_scause(), r_stval(), p->sz);
+      printf("[vmfault] va=0x%lx sz=0x%lx mapped=%d\n",
+        r_stval(), p->sz, ismapped(p->pagetable, PGROUNDDOWN(r_stval())));
+      }
+      release(&p->lock);
+#ifdef LAZY
+      // Default call to lazy allocator
+      if(vmfault(p->pagetable, r_stval(), (r_scause() == 13)? 1 : 0) == 0) {
+#elif LOCALITY
+      // call to locality aware allocator
+      if(locality_allocator(p->pagetable, r_stval(), (r_scause() == 13)? 1 : 0) == 0) {
+#endif
+       // page fault on lazily-allocated page
+      printf("failed to allocate more mem\n");
+      printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+      setkilled(p);
+    }
+
+
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
@@ -79,10 +110,27 @@ usertrap(void)
 
   if(killed(p))
     kexit(-1);
-
+#ifdef DEFAULT
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();
+#elif SJF // no preemption
+#elif PRIORR
+  if(which_dev == 2){
+    struct proc *p = myproc();
+    // count running time
+    if(p && p->state == RUNNING){
+      p->tickused++;
+      // if exceed the quantum then yiled
+      if(p->tickused > QUANTUM){
+        p->tickused = 0;
+        yield();   // force RR switch among same-priority processes
+      }
+    }
+    yield();
+  }
+
+#endif
 
   prepare_return();
 
@@ -151,9 +199,27 @@ kerneltrap()
     panic("kerneltrap");
   }
 
+#ifdef DEFAULT
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2 && myproc() != 0)
     yield();
+#elif SFJ // no preemption
+#elif PRIORR
+  if(which_dev == 2 && myproc() != 0){
+    struct proc *p = myproc();
+    // count running time
+    if(p && p->state == RUNNING){
+      p->tickused++;
+      // if exceed the quantum then yiled
+      if(p->tickused > QUANTUM){
+        p->tickused = 0;
+        yield();   // force RR switch among same-priority processes
+      }
+    }
+    yield();
+  }
+
+#endif
 
   // the yield() may have caused some traps to occur,
   // so restore trap registers for use by kernelvec.S's sepc instruction.
@@ -170,6 +236,17 @@ clockintr()
     wakeup(&ticks);
     release(&tickslock);
   }
+  
+  // this func run on all cpus
+  struct proc * p = myproc();
+  if(p != 0) { // make sure cpu is NOT idle or in scheduler
+    acquire(&p->lock);
+    if(p->state == RUNNING){
+      p->runtime++;
+    }
+    release(&p->lock);
+  }
+  
 
   // ask for the next timer interrupt. this also clears
   // the interrupt request. 1000000 is about a tenth

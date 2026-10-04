@@ -28,7 +28,8 @@ OBJS = \
   $K/sysfile.o \
   $K/kernelvec.o \
   $K/plic.o \
-  $K/virtio_disk.o
+  $K/virtio_disk.o\
+  $K/random.o #project 2
 
 # riscv64-unknown-elf- or riscv64-linux-gnu-
 # perhaps in /opt/riscv/bin
@@ -59,6 +60,13 @@ LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
 
+# (Project 2) variable to assign through shell
+SCHEDULER ?= DEFAULT # default is RR scheduler
+QUANTUM ?= 2 # for PRI + RR
+
+# (Project 3)
+ALLOCATOR ?= LAZY # default allocator is the lazy 
+
 CFLAGS = -Wall -Werror -O -fno-omit-frame-pointer -ggdb -gdwarf-2
 CFLAGS += -MD
 CFLAGS += -mcmodel=medany
@@ -72,6 +80,13 @@ CFLAGS += -fno-builtin-memcpy -Wno-main
 CFLAGS += -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf
 CFLAGS += -I.
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+
+# prj2 Macro to use in scheduler
+CFLAGS += -D$(SCHEDULER)
+CFLAGS += -DQUANTUM=$(QUANTUM)
+
+# proj 3 Marcro to use in page allocator
+CFLAGS += -D$(ALLOCATOR)
 
 # Disable PIE when possible (for Ubuntu 16.10 toolchain)
 ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]no-pie'),)
@@ -142,9 +157,20 @@ UPROGS=\
 	$U/_logstress\
 	$U/_forphan\
 	$U/_dorphan\
+	$U/_hello\
+	$U/_sleep\
+	$U/_sort\
+	$U/_ticksrunning\
+	$U/_test_sjf\
+	$U/_test_priorr\
+	$U/_test_sbrk\
+	$U/_test_lseek\
+	$U/_test_symlink\
+	$U/_test_bigfile\
 
-fs.img: mkfs/mkfs README $(UPROGS)
-	mkfs/mkfs fs.img README $(UPROGS)
+# prj 2 added the example.txt for testing purpose
+fs.img: mkfs/mkfs README example.txt $(UPROGS)
+	mkfs/mkfs fs.img README example.txt $(UPROGS)
 
 -include kernel/*.d user/*.d
 
@@ -164,6 +190,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
 	else echo "-s -p $(GDBPORT)"; fi)
 ifndef CPUS
 CPUS := 3
+#CPUS := 1 # prj 2 - to show scheduler working
 endif
 
 QEMUOPTS = -machine virt -bios none -kernel $K/kernel -m 128M -smp $(CPUS) -nographic

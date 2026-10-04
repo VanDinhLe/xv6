@@ -440,6 +440,58 @@ bmap(struct inode *ip, uint bn)
     return addr;
   }
 
+  // prj 4
+  bn -= NINDIRECT;// offset to doubly indirect range
+  if(bn < NDBIND * NDBBLOCK){
+    int db_index = bn / NDBIND; // calculate which d indir block
+    int offdb = bn % NDBIND; // offset within a d indir
+    int dbn = offdb / NINDIRECT; // cal which block in d indir block
+    int sbn = offdb - dbn * NINDIRECT;
+    struct buf *sip;
+    struct buf *dbp;
+    uint did_addr;
+    uint sid_addr;
+    uint * did_entries;
+    uint * sid_entries;
+    // create a block if no data block assigned yet for db-indir
+    addr = ip->addrs[NDIRECT+NINDBLOCK + db_index];
+    if((did_addr = ip->addrs[NDIRECT+NINDBLOCK + db_index]) ==0){
+      did_addr = balloc(ip->dev);
+      addr = did_addr;
+      if(did_addr == 0)
+        return 0;
+      ip->addrs[NDIRECT+1] = did_addr;// set addr for db-indir block
+    }
+    // read db-indir block
+    dbp = bread(ip->dev, did_addr);// get buff
+    did_entries = (uint*)dbp->data;
+    addr = did_entries[dbn];
+    if((sid_addr = did_entries[dbn]) == 0){
+      sid_addr = balloc(ip->dev);
+      addr = sid_addr;
+      if(sid_addr==0) {
+	brelse(dbp);
+        return 0;
+      }
+      did_entries[dbn] = sid_addr; // set addr for singly indir block
+      sip = bread(ip->dev, sid_addr);// read data in singly indir block
+      sid_entries = (uint*)sip->data;
+      addr = sid_entries[sbn];
+      if((addr = sid_entries[sbn]) == 0){
+        addr = balloc(ip->dev);
+	if(addr){
+	  a[sbn] = addr;
+	  log_write(sip);
+	}
+      }
+      brelse(sip);
+      log_write(dbp);
+    }
+    brelse(dbp);
+    return addr;
+  }
+
+  printf("end\n");
   panic("bmap: out of range");
 }
 
@@ -471,6 +523,35 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  if(ip->addrs[NDIRECT+NINDBLOCK]){
+   struct buf * dbp;
+   struct buf * sbp;
+   uint * d_entries;
+   uint * s_entries;
+   int x, y, z;
+   for(z = 0; z < NDBBLOCK; z++ ){
+     dbp = bread(ip->dev, ip->addrs[NDIRECT+NINDBLOCK+z]);
+     d_entries = (uint*)dbp->data;
+     for(x = 0; x < NINDIRECT; x++){
+       // for each valid entries in d-indirect entry
+       if(d_entries[x]){
+         sbp = bread(ip->dev, d_entries[x]);
+         s_entries = (uint*)sbp->data;
+         // for each valid entries in singly indirect 
+         for(y = 0; y < NINDIRECT; y++){
+           if(s_entries[y]){
+	     bfree(ip->dev, s_entries[y]);
+	   }
+         }
+         brelse(sbp);
+         bfree(ip->dev, d_entries[x]);
+       }
+     }
+     brelse(dbp);
+     bfree(ip->dev, ip->addrs[NDIRECT+1]);
+     ip->addrs[NDIRECT+1] = 0;
+    }
+  }
   ip->size = 0;
   iupdate(ip);
 }
@@ -530,20 +611,25 @@ writei(struct inode *ip, int user_src, uint64 src, uint off, uint n)
 {
   uint tot, m;
   struct buf *bp;
-
-  if(off > ip->size || off + n < off)
+  
+  // remove this to allow filling 0s automatically
+  //if(off > ip->size || off + n < off)
+  if(off + n < off)
     return -1;
   if(off + n > MAXFILE*BSIZE)
     return -1;
 
   for(tot=0; tot<n; tot+=m, off+=m, src+=m){
     uint addr = bmap(ip, off/BSIZE);
-    if(addr == 0)
+    if(addr == 0){
+      printf("break 1\n");
       break;
+    }
     bp = bread(ip->dev, addr);
     m = min(n - tot, BSIZE - off%BSIZE);
     if(either_copyin(bp->data + (off % BSIZE), user_src, src, m) == -1) {
       brelse(bp);
+      printf("break 2\n");
       break;
     }
     log_write(bp);

@@ -16,6 +16,9 @@
 #include "file.h"
 #include "fcntl.h"
 
+extern uint bmap(struct inode *ip, uint bn);
+#define MAXSYMLINKS 10
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -256,6 +259,13 @@ create(char *path, short type, short major, short minor)
   if((ip = dirlookup(dp, name, 0)) != 0){
     iunlockput(dp);
     ilock(ip);
+    
+    // CRITICAL CHECK ADDED: Fail if the existing item is a symlink.
+    if(ip->type == T_SYMLINK){
+      iunlockput(ip);
+      return 0; // Cannot create/overwrite a symlink here.
+    }
+
     if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
       return ip;
     iunlockput(ip);
@@ -300,7 +310,6 @@ create(char *path, short type, short major, short minor)
   iunlockput(dp);
   return 0;
 }
-
 uint64
 sys_open(void)
 {
@@ -328,6 +337,64 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
+
+    // if O_NOFOFLLOW is set
+    if((omode & (O_WRONLY | O_RDWR)) && ip->type == T_SYMLINK && (omode & O_NOFOLLOW)){
+      // cannot write to symlink itself (GPT said so)
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    // If path is a symlink and O_NOFOLLOW is NOT set
+    if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
+      int depth;
+      for(depth = 0; depth < MAXSYMLINKS; depth++){
+        // read the stored target pathname from symlink inode
+        int tlen = ip->size;
+        if(tlen < 0 || tlen >= MAXPATH){
+          // invalid target length
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+        char target[MAXPATH];
+        if(tlen > 0){
+          if(readi(ip, 0, (uint64)target, 0, tlen) != tlen){
+            iunlockput(ip);
+            end_op();
+            return -1;
+          }
+          target[tlen] = '\0';
+        } else {
+          // empty target -> error
+          iunlockput(ip);
+          end_op();
+          return -1;
+        }
+
+        // release the symlink inode, then lookup the target
+        iunlockput(ip);
+
+        // namei returns an unlocked inode; namei may return 0 if target doesn't exist
+        if((ip = namei(target)) == 0){
+          // target does not exist -> open fail
+          end_op();
+          return -1;
+        }
+        ilock(ip);
+
+        if(ip->type != T_SYMLINK) break; // resolved to non-symlink; proceed to open it
+        // else continue following next symlink in the loop
+      }
+
+      if(ip->type == T_SYMLINK){
+        // reached MAXSYMLINKS -> fail
+        iunlockput(ip);
+        end_op();
+        return -1;
+      }
+    }
+
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -503,3 +570,60 @@ sys_pipe(void)
   }
   return 0;
 }
+
+//pr 4
+int
+sys_lseek(void)
+{
+  struct file *f;
+  int n;
+
+  argint(1, &n);
+  if(argfd(0, 0, &f) < 0)
+    return -1;
+  return fileseek(f, n);
+}
+// create a symbolic link at 'path' that points to 'target'
+uint64
+sys_symlink(void)
+{
+  char path[MAXPATH], target[MAXPATH];
+  struct inode *ip; // symlink inode
+
+  if( argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0)
+    return -1;
+
+  // begin logging
+  begin_op();
+
+  // create() will create and return a locked inode for the new path
+  ip = create(path, T_SYMLINK, 0, 0);
+  if(ip == 0){
+    end_op();
+    return -1;
+  }
+
+  // write target string into the inode's data blocks
+  int tlen = strlen(target);
+  if(tlen > 0){
+    // writei will allocate blocks as needed
+    if(writei(ip, 0, (uint64)target, 0, tlen) != tlen){
+      // write failed: free the inode by marking type=0 and drop it
+      ip->type = 0;
+      iunlockput(ip);
+      end_op();
+      return -1;
+    }
+    ip->size = tlen;
+    iupdate(ip);
+  } else {
+    // empty target: set size 0
+    ip->size = 0;
+    iupdate(ip);
+  }
+
+  iunlockput(ip);
+  end_op();
+  return 0;
+}
+

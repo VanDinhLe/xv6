@@ -125,14 +125,10 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
-  // prj 2 set up the time variables
-  p->runtime =0; // RUNNING time
-  p->joblength = rand_xv6() % 10; // random burst time
-  p->priority = 3; // default worst priority
-  p->tickused = 0; // runtime for PRIO + RR
-  // prj 3
-  p->pagefault = 0; // initiate page fault counter
-  p->pagealloc = 0; // initiale number of page allocated
+  p->runtime =0;
+  p->joblength = rand_xv6() % 10;
+  p->priority = 3;
+  p->tickused = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -430,7 +426,7 @@ kwait(uint64 addr)
 void
 scheduler(void)
 {
-#ifdef DEFAULT // XV6 RR
+#ifdef DEFAULT
   struct proc *p;
   struct cpu *c = mycpu();
 
@@ -459,7 +455,7 @@ scheduler(void)
         //printf("inside scheduler\n");
         //if(p->pid != last_pid_percpu[cid]){
         if(cid == 0 && p->pid != last_pid_percpu[cid]){
-         // printf("[RR_SCHED] CPU %d running pid %d at ticks %d\n", cid, p->pid, ticks);
+          printf("[RR_SCHED] CPU %d running pid %d at ticks %d\n", cid, p->pid, ticks);
 	}
         // Process is done running for now.
         // It should have changed its p->state before coming back.
@@ -474,7 +470,7 @@ scheduler(void)
     }
   }
 
-#elif SJF // SJF
+#elif SJF
   struct cpu *c = mycpu();
 
   c->proc = 0;
@@ -489,41 +485,41 @@ scheduler(void)
 
     int found = 0;
     int min = __INT_MAX__;
-    struct proc *p = 0; // hold shortest process
-    // find shortest job
+    struct proc *p = 0;
+
     for(int i = 0; i < NPROC; i++) {
      acquire(&proc[i].lock);
       if(proc[i].state == RUNNABLE) {
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
 	if(found == 0 || proc[i].joblength < min) {
-          // Release old candidate's lock
+          // Release old candidate if we had one
           if (found)
             release(&p->lock);
 
-          min = proc[i].joblength; //update min
+          min = proc[i].joblength;
 	  p = &proc[i];
           found = 1;
-	  continue; // hold lock of candidate
+	  continue;
 	}
       }
       release(&proc[i].lock);
     }
-    // found no candidate
     if(found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");
       continue;
     }
-
-    // DBG
     static int last_pid_percpu[NCPU] = {-1, };
     int cid = cpuid();
-    if(p->pid != last_pid_percpu[cid]){
-      //printf("[SJF_SCHED] CPU %d running pid %d burst %d at ticks %d\n", cid, p->pid, p->joblength, ticks);
-    }
-
-    // scheduler the candidate
+    //printf("inside scheduler\n");
+    //acquire(&p->lock); 
     p->state = RUNNING;
     c->proc = p;
+    if(p->pid != last_pid_percpu[cid]){
+     // printf("[SJF_SCHED] CPU %d running pid %d burst %d at ticks %d\n", cid, p->pid, p->joblength, ticks);
+    }
     swtch(&c->context, &p->context);
 
     // Process is done running for now.
@@ -532,7 +528,7 @@ scheduler(void)
     release(&p->lock);
 
   }
-#elif PRIORR // PRIO + RR
+#elif PRIORR
   struct cpu *c = mycpu();
   c->proc = 0;
 
@@ -545,10 +541,11 @@ scheduler(void)
     intr_on();
     intr_off();
 
+   // struct proc *p = 0;
     int found = 0;
     int highest = 3;  // larger = lower priority
 
-    // find the highest priority level with any RUNNABLE process
+    // First, find the highest priority level with any RUNNABLE process
     for(struct proc *q = proc; q < &proc[NPROC]; q++){
       acquire(&q->lock);
       if(q->state == RUNNABLE && q->priority < highest)
@@ -560,20 +557,12 @@ scheduler(void)
     for(struct proc *q = proc; q < &proc[NPROC]; q++){
       acquire(&q->lock);
       if(q->state == RUNNABLE && q->priority == highest){
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
         found = 1;
         q->state = RUNNING;
         c->proc = q;
         q->tickused = 0;
-       
-        // DBG
-        static int last_pid_percpu[NCPU] = {-1, };
-        int cid = cpuid();
-        if(q->pid != last_pid_percpu[cid]){
-         // printf("[PRIORR] CPU %d running pid %d at ticks %d\n", cid, q->pid, ticks);
-    }
+
+     //   printf("[SCHED] CPU %d -> PID %d (prio %d)\n", cpuid(), q->pid, q->priority);
         swtch(&c->context, &q->context);
 
         c->proc = 0;
@@ -584,6 +573,7 @@ scheduler(void)
     if(found == 0)
       asm volatile("wfi");
   }
+
 #endif
 }
 
@@ -819,31 +809,37 @@ procdump(void)
 int
 proc_runtime(int pid)
 { 
+  //printf("find runtime\n") ;
   struct proc *p;
   int runtime = -1;
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
+    //printf("loop through pid: %d\n", p->pid);
     if(p->pid == pid){
-      // return process runtime
+      //printf("found pid\n");
+      //p->killed = 1;
+      
       if(p->runtime != 0){
+        // Wake process from sleep().
 	runtime = p->runtime;
         release(&p->lock);
+	//printf("return 1 %d\n", runtime);
         return runtime;
       }
-      // if process has not been scheduled
       release(&p->lock);
+      //printf("return 2 %d\n", runtime);
       return 0;
       
+      //release(&p->lock);
+      //return p->creattime;
     }
     release(&p->lock);
   }
-  // not created
+  //printf("return 3 %d\n", runtime);
   return -1;
 
 }
 
-//prj 2
-// return the burst length of a process
 int
 proc_job_length(int pid)
 { 
@@ -851,9 +847,13 @@ proc_job_length(int pid)
   int joblength = 0;
   for(p = proc; p < &proc[NPROC]; p++){
     acquire(&p->lock);
+    //printf("loop through pid: %d\n", p->pid);
+    //if(p->pid == pid)
     if(p->pid == pid && (p->state == RUNNABLE || p->state == RUNNING))
     {
+      //printf("found pid\n");
 
+      // Wake process from sleep().
       joblength = p->joblength;
       release(&p->lock);
       return joblength;
@@ -864,8 +864,6 @@ proc_job_length(int pid)
   return -1;
 
 }
-// prj 2
-// set the priorty of process
 int
 proc_prio(int pid)
 {

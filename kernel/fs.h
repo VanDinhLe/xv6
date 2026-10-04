@@ -24,9 +24,13 @@ struct superblock {
 
 #define FSMAGIC 0x10203040
 
-#define NDIRECT 12
-#define NINDIRECT (BSIZE / sizeof(uint))
-#define MAXFILE (NDIRECT + NINDIRECT)
+//prj 4
+#define NDIRECT 10 // number of direct block
+#define NINDBLOCK 1 // number of singly indirect block
+#define NINDIRECT (BSIZE / sizeof(uint)) // 256 blocks in singly indirect block
+#define NDBBLOCK 2 // number of double indirect block
+#define NDBIND (NINDIRECT * NINDIRECT) // 256 * 256 blocks in double indir
+#define MAXFILE (NDIRECT  + NINDIRECT *NINDBLOCK + NDBIND* NDBBLOCK)
 
 // On-disk inode structure
 struct dinode {
@@ -35,7 +39,7 @@ struct dinode {
   short minor;          // Minor device number (T_DEVICE only)
   short nlink;          // Number of links to inode in file system
   uint size;            // Size of file (bytes)
-  uint addrs[NDIRECT+1];   // Data block addresses
+  uint addrs[NDIRECT+NINDBLOCK+NDBBLOCK];   // Data block addresses
 };
 
 // Inodes per block.

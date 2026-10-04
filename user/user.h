@@ -24,6 +24,18 @@ int getpid(void);
 char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
+int hello(void);
+int pause(int);
+int ticks_running(int);
+int sjf_job_length(int);
+int set_sched_priority(int);
+int get_sched_priority(int);
+// prj 3
+int pagefault(void);
+int pagecount(void);
+//prj 4 
+int lseek(int, int);
+int symlink(const char*, const char*);
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -454,21 +454,27 @@ vmfault(pagetable_t pagetable, uint64 va, int read)
 {
   uint64 mem;
   struct proc *p = myproc();
-
-  if (va >= p->sz)
+  if (va >= p->sz) {
     return 0;
-  va = PGROUNDDOWN(va);
+  }
+  va = PGROUNDDOWN(va); // make va page-aligned 0x0007 ->0x0000
+  // make sure not mapped to any frame
   if(ismapped(pagetable, va)) {
     return 0;
   }
+  // get free frame
   mem = (uint64) kalloc();
-  if(mem == 0)
+  if(mem == 0) {
     return 0;
+  }
+  // clean frame
   memset((void *) mem, 0, PGSIZE);
+  // mape page to frame
   if (mappages(p->pagetable, va, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
     kfree((void *)mem);
     return 0;
   }
+  p->pagealloc++;// count number of page allocated
   return mem;
 }
 
@@ -484,3 +490,59 @@ ismapped(pagetable_t pagetable, uint64 va)
   }
   return 0;
 }
+
+//project 3
+// asign 3 pages a time at virtual addr va
+uint64
+locality_allocator(pagetable_t pagetable, uint64 va, int read)
+{
+  uint64 mem;
+  struct proc *p = myproc();
+  int pages = 2; // actual pages = num + 1
+  // for edge case to see maximum how many pages can we allocate
+  for(;pages >= 0; pages--) {
+    // check if smaller than p->sz as well
+    if (va + pages * PGSIZE <= TRAPFRAME && va + pages*PGSIZE < p->sz)
+    {
+       break;
+    }
+  }
+  if (pages < 0){
+    return 0;
+  }
+  va = PGROUNDDOWN(va); // make va page-aligned
+  // for each allocatable page we map it to a physical frame
+  for(int page = 0; page <= pages; page++){
+    // make sure page not already mapped
+    if(ismapped(pagetable, va + page*PGSIZE)) {
+      if(page == 0) {
+        return 0;
+      } else {
+       break;
+      }
+    }
+    // get free frame
+    mem = (uint64) kalloc(); // cast addr to an int number
+    if(mem == 0) {
+      if(page == 0) {
+        return 0;
+      } else {
+       break;
+      }
+    }
+    // clean the frame
+    memset((void *) mem, 0, PGSIZE);
+    // map each page to frame
+    if (mappages(p->pagetable, va+page*PGSIZE, PGSIZE, mem, PTE_W|PTE_U|PTE_R) != 0) {
+      kfree((void *)mem);
+      if(page == 0) {
+        return 0;
+      } else {
+       break;
+      }
+    }
+    p->pagealloc++;// page allocated counter
+  }
+  return mem;
+}
+

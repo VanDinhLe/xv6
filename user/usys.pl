@@ -42,3 +42,13 @@ entry("getpid");
 entry("sbrk");
 entry("pause");
 entry("uptime");
+entry("hello");
+entry("ticks_running");
+entry("sjf_job_length");
+entry("set_sched_priority");
+entry("get_sched_priority");
+entry("pagefault");
+entry("pagecount");
+# prj 4
+entry('lseek');
+entry('symlink');

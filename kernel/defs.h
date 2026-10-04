@@ -8,6 +8,9 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+// random.c (pr 3)
+uint64 rand_xv6(void);
+void rand_init(void);
 
 // bio.c
 void            binit(void);
@@ -33,6 +36,7 @@ void            fileinit(void);
 int             fileread(struct file*, uint64, int n);
 int             filestat(struct file*, uint64 addr);
 int             filewrite(struct file*, uint64, int n);
+int 		fileseek(struct file*, int n); // prj 4
 
 // fs.c
 void            fsinit(int);
@@ -101,6 +105,9 @@ void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+int		proc_runtime(int); // project 2
+int		proc_job_length(int); // project 2
+int		proc_prio(int); //prj 2
 
 // swtch.S
 void            swtch(struct context*, struct context*);
@@ -169,6 +176,7 @@ int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 int             ismapped(pagetable_t, uint64);
 uint64          vmfault(pagetable_t, uint64, int);
+uint64          locality_allocator(pagetable_t, uint64, int);
 
 // plic.c
 void            plicinit(void);

@@ -84,6 +84,15 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 // Per-process state
 struct proc {
   struct spinlock lock;
+  // Prj 3
+  int pagefault;	// page fault counter
+  int pagealloc;	// number of pages allocated
+
+  // Prj 2
+  int runtime;		// how long a process has been in RUNNING
+  int joblength;	// burst time
+  int tickused;		// time counter for RR in hybrid scheduler
+  int priority;		// priority of process
 
   // p->lock must be held when using these:
   enum procstate state;        // Process state
@@ -103,5 +112,5 @@ struct proc {
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
-  char name[16];               // Process name (debugging)
+  char name[16];               // Process name (debuggin)
 };

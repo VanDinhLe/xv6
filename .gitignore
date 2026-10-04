@@ -16,3 +16,5 @@ kernel/kernel
 user/usys.S
 .gdbinit
 TAGS
+.DS_Store
+/PROJECT 4-README.pdf
